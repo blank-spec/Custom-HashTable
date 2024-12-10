@@ -7,7 +7,7 @@
 #include <shared_mutex>
 using namespace std;
 
-namespace std {
+namespace hashes_utils {
     struct HashCombiner {
         template<typename T>
         size_t operator()(size_t seed, const T& v) const {
@@ -15,7 +15,7 @@ namespace std {
             return seed;
         }
     };
-    
+
     template<typename T1, typename T2>
     struct hash<pair<T1, T2>> {
         size_t operator()(const pair<T1, T2>& p) const {
@@ -46,7 +46,7 @@ private:
     }
 
     void rehash() {
-        capacity_ *= 2;
+        capacity_ *= 1.5;
         Vector<LinkedList<pair<Key, Value>>> newTable(capacity_, LinkedList<pair<Key, Value>>());
 
         for (const auto& bucket : table_) {
@@ -64,7 +64,7 @@ public:
     class HashTableIterator {
     private:
         using ListType = std::conditional_t<IsConst, const LinkedList<std::pair<Key, Value>>, LinkedList<std::pair<Key, Value>>>;
-        using ListIterator = typename ListType::Iterator;
+        using ListIterator = typename ListType::iterator;
 
         HashTable* table;
         size_t bucketIndex;
@@ -91,6 +91,9 @@ public:
               current(bucketIndex < table->capacity_ ? table->table_[bucketIndex].begin() : ListIterator()) {
             moveToNextValidBucket();
         }
+
+        HashTableIterator(HashTable* table, size_t bucketIndex, ListIterator current)
+        : table(table), bucketIndex(bucketIndex), current(current) {}
 
         referenceType operator*() const { return *current; }
         pointerType operator->() const { return &(*current); }
@@ -125,6 +128,14 @@ public:
     }
 
     iterator end() {
+        return { this, capacity_ };
+    }
+
+    const_iterator cbegin() const {
+        return { this, 0 };
+    }
+
+    const_iterator cend() const {
         return { this, capacity_ };
     }
 
@@ -187,17 +198,17 @@ public:
         size_t index = hash(keyValue.first);
 
         if (table_[index].empty()) [[likely]] {
-            table_[index].push_front(keyValue);
+            table_[index].push_front(move(keyValue));
             ++size_;
         }
         else {
             for (auto& [existing_key, existing_value] : table_[index]) {
                 if (existing_key == keyValue.first) {
-                    existing_value = keyValue.second;
+                    existing_value = move(keyValue.second);
                     return;
                 }
             }
-            table_[index].push_back(keyValue);
+            table_[index].push_back(move(keyValue));
             ++size_;
         }
     }
@@ -217,14 +228,9 @@ public:
     }
 
     bool contains(const Key& key) const {
+        shared_lock read_lock(mutex_);
         size_t index = hash(key);
-
-        if (table_[index].getSize() == 1) [[likely]] {
-            const auto& [existing_key, _] = table_[index].front();
-            return existing_key == key;
-        }
-
-        for (auto& [existing_key, existing_value] : table_[index]) {
+        for (const auto& [existing_key, _] : table_[index]) {
             if (existing_key == key)
                 return true;
         }
@@ -232,20 +238,37 @@ public:
     }
 
     void erase(const Key& key) {
-        unique_lock lock(mutex_);
         size_t index = hash(key);
-        if (table_[index].getSize() == 1) [[likely]] {
-            table_[index].pop_front();
-            --size_;
-            return;
-        }
-        for (auto& [existing_key, existing_value] : table_[index]) {
-            if (existing_key == key) {
-                table_[index].remove(table_[index].index({existing_key, existing_value}));
+        for (auto it = table_[index].begin(); it != table_[index].end(); ++it) {
+            if (it->first == key) {
+                unique_lock lock(mutex_);
+                table_[index].erase(it);
                 --size_;
                 return;
             }
         }
+    }
+
+    template <typename... Args>
+    void emplace(Args&&... args) {
+        insert(std::make_pair(std::forward<Args>(args)...));
+    }
+
+    iterator find(const Key& key) {
+        size_t index = hash(key);
+        for (auto it = table_[index].begin(); it != table_[index].end(); ++it) {
+            if (it->first == key)
+                return iterator(this, index, it);
+        }
+        return end();
+    }
+
+    void swap(HashTable& other) noexcept {
+        std::swap(table_, other.table_);
+        std::swap(size_, other.size_);
+        std::swap(capacity_, other.capacity_);
+        std::swap(mutex_, other.mutex_);
+        swap(hasher_, other.hasher_);
     }
 
     [[nodiscard]] int getSize() const { return size_; }
