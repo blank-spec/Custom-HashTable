@@ -7,7 +7,7 @@
 #include <shared_mutex>
 using namespace std;
 
-namespace hashes_utils {
+namespace std {
     struct HashCombiner {
         template<typename T>
         size_t operator()(size_t seed, const T& v) const {
@@ -31,6 +31,25 @@ namespace hashes_utils {
 template <typename Key, typename Value, typename Hash = std::hash<Key>>
 class HashTable {
 private:
+    struct HashCombiner {
+        template<typename T>
+        size_t operator()(size_t seed, const T& v) const {
+            seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            return seed;
+        }
+    };
+
+    template<typename T1, typename T2>
+    struct hash<pair<T1, T2>> {
+        size_t operator()(const pair<T1, T2>& p) const {
+            size_t seed = 0;
+            HashCombiner combiner;
+            seed = combiner(seed, p.first);
+            seed = combiner(seed, p.second);
+            return seed;
+        }
+    };
+    
     Vector<LinkedList<pair<Key, Value>>> table_;
     size_t size_;
     size_t capacity_;
@@ -267,8 +286,8 @@ public:
         std::swap(table_, other.table_);
         std::swap(size_, other.size_);
         std::swap(capacity_, other.capacity_);
-        std::swap(mutex_, other.mutex_);
-        swap(hasher_, other.hasher_);
+        //std::swap(mutex_, other.mutex_);
+        std::swap(hasher_, other.hasher_);
     }
 
     [[nodiscard]] int getSize() const { return size_; }
