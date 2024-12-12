@@ -11,7 +11,7 @@ namespace std {
     struct HashCombiner {
         template<typename T>
         size_t operator()(size_t seed, const T& v) const {
-            seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<T>{}(v)+0x9e3779b9 + (seed << 6) + (seed >> 2);
             return seed;
         }
     };
@@ -31,7 +31,7 @@ namespace std {
 template <typename Key, typename Value, typename Hash = std::hash<Key>>
 class HashTable {
 private:
-    
+
     Vector<LinkedList<pair<Key, Value>>> table_;
     size_t size_;
     size_t capacity_;
@@ -89,12 +89,13 @@ public:
 
         HashTableIterator(HashTable* table, size_t bucketIndex = 0)
             : table(table), bucketIndex(bucketIndex),
-              current(bucketIndex < table->capacity_ ? table->table_[bucketIndex].begin() : ListIterator()) {
+            current(bucketIndex < table->capacity_ ? table->table_[bucketIndex].begin() : ListIterator()) {
             moveToNextValidBucket();
         }
 
         HashTableIterator(HashTable* table, size_t bucketIndex, ListIterator current)
-        : table(table), bucketIndex(bucketIndex), current(current) {}
+            : table(table), bucketIndex(bucketIndex), current(current) {
+        }
 
         referenceType operator*() const { return *current; }
         pointerType operator->() const { return &(*current); }
@@ -149,10 +150,12 @@ public:
     }
 
     HashTable(size_t initial_capacity)
-        : table_(initial_capacity, LinkedList<pair<Key, Value>>()), size_(0), capacity_(initial_capacity) {}
+        : table_(initial_capacity, LinkedList<pair<Key, Value>>()), size_(0), capacity_(initial_capacity) {
+    }
 
     HashTable()
-        : table_(5, LinkedList<pair<Key, Value>>()), size_(0), capacity_(5) {}
+        : table_(5, LinkedList<pair<Key, Value>>()), size_(0), capacity_(5) {
+    }
 
     HashTable(std::initializer_list<pair<Key, Value>> init) : HashTable() {
         for (auto it = init.begin(); it != init.end(); ++it) {
@@ -224,7 +227,7 @@ public:
             }
         }
 
-        bucket.push_back({key, Value()});
+        bucket.push_back({ key, Value() });
         return bucket.back().second;
     }
 
@@ -243,16 +246,11 @@ public:
         for (auto it = table_[index].begin(); it != table_[index].end(); ++it) {
             if (it->first == key) {
                 unique_lock lock(mutex_);
-                table_[index].erase(it);
+                table_[index].remove({ it->first, it->second });
                 --size_;
                 return;
             }
         }
-    }
-
-    template <typename... Args>
-    void emplace(Args&&... args) {
-        insert(std::make_pair(std::forward<Args>(args)...));
     }
 
     iterator find(const Key& key) {
